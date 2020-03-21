@@ -34,15 +34,10 @@ class Top(Elaboratable):
 		for i in range(8):
 			led = platform.request("led", i)
 			m.d.sync += led.o.eq(~spiSlave.data_in[i])
-		
-		# Hmm, I must have swapped something around I guess... will fix tomorrow, for now:
-		invertedData = Signal(8)
-		for i in range(8):
-			m.d.comb += invertedData[i].eq(spiSlave.data_in[7-i])
-		
+				
 		# 14 segment display
 		fourteenSegmentDisplay = FourteenSegmentDisplay()
-		m.d.comb += fourteenSegmentDisplay.data.eq(invertedData)
+		m.d.comb += fourteenSegmentDisplay.data.eq(spiSlave.data_in)
 		m.submodules += fourteenSegmentDisplay
 		return m
 

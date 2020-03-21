@@ -3,10 +3,11 @@ from nmigen.build import Platform, ResourceError
 from nmigen.back.pysim import Simulator, Delay, Settle
 
 class SpiSlave(Elaboratable):
-	def __init__(self, simulation = False):
+	def __init__(self, simulation = False, lsbFirst = False):
 		# Signals in system clock domain
 		self.data_out = Signal(8)     # Data to be sent during next SPI transaction
 		self.data_in  = Signal(8)     # Data received from SPI during last transaction
+		self.counter  = Signal(4)     # Counter showing the amount of bits received
 		
 		# Signals in SPI clock domain
 		self.spi_sclk = Signal(1) # SPI clock
@@ -17,7 +18,8 @@ class SpiSlave(Elaboratable):
 		# Simulation flag
 		self._simulation = simulation
 		
-		self.counter = Signal(4)
+		# Settings
+		self.lsbFirst = lsbFirst
 	
 	def elaborate(self, platform: Platform) -> Module:
 		m = Module()
@@ -54,9 +56,6 @@ class SpiSlave(Elaboratable):
 		mosi = Signal(1)
 		m.d.comb += mosi.eq(mosi_reg[1])
 		
-		# Transaction position counter
-		counter = self.counter#Signal(3) # Counts from 0 to 7
-		
 		# Buffers
 		tx_buffer = Signal(8)
 		rx_buffer = Signal(8)
@@ -66,10 +65,13 @@ class SpiSlave(Elaboratable):
 		
 		# Transaction state machine
 		with m.If(~ssel_active): # We are not selected, reset state
-			m.d.sync += counter.eq(0)
+			m.d.sync += self.counter.eq(0)
 		with m.Elif(sclk_risingedge): # Clock ticked, read data
-			m.d.sync += counter.eq(counter+1)
-			m.d.sync += rx_buffer.eq((rx_buffer>>1) | (mosi<<7))
+			m.d.sync += self.counter.eq(self.counter+1)
+			if self.lsbFirst:
+				m.d.sync += rx_buffer.eq((rx_buffer>>1) | (mosi<<7))
+			else:
+				m.d.sync += rx_buffer.eq((rx_buffer<<1) | mosi)
 		
 		with m.If(ssel_risingedge): # End of transaction
 			m.d.sync += tx_buffer.eq(self.data_out)
@@ -89,8 +91,6 @@ class SpiSlave(Elaboratable):
 			
 			self._tx_buffer = tx_buffer
 			self._rx_buffer = rx_buffer
-			
-			self._counter = counter
 		
 		return m
 	
@@ -104,7 +104,7 @@ class SpiSlave(Elaboratable):
 			ports += [
 				self._ssel_reg, self._ssel_risingedge, self._ssel_fallingedge,
 				self._sclk_reg, self._sclk_risingedge, self._sclk_fallingedge,
-				self._tx_buffer, self._rx_buffer, self._counter
+				self._tx_buffer, self._rx_buffer
 			]
 		
 		return ports
@@ -129,7 +129,7 @@ if __name__ == "__main__":
 			# Simulate transaction
 			for bit in range(8):
 				yield m.spi_sclk.eq(0) # Falling edge of SPI clock
-				yield m.spi_mosi.eq((test_data>>bit)&1)
+				yield m.spi_mosi.eq((test_data>>(7-bit))&1)
 				yield Delay(1e-6) # 1 uS delay
 				yield m.spi_sclk.eq(1) # Rising edge of SPI clock
 				yield Delay(1e-6) # 1 uS delay
