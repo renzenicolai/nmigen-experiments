@@ -1,0 +1,18 @@
+[dumpfile] "/home/renze/Documents/Badge.team/nmigen/project/fpga/spi.vcd"
+[dumpfile_size] 122208
+[treeopen] top.
+@22
+top.data_out[7:0]
+top.data_in[7:0]
+top.spi_sclk
+top.spi_ssel
+top.spi_mosi
+top.spi_miso
+top.ssel_reg[2:0]
+top.ssel_risingedge
+top.ssel_fallingedge
+top.sclk_reg[2:0]
+top.sclk_risingedge
+top.sclk_fallingedge
+top.tx_buffer[7:0]
+top.rx_buffer[7:0]

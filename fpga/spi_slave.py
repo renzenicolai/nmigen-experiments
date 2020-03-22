@@ -3,10 +3,14 @@ from nmigen.build import Platform, ResourceError
 from nmigen.back.pysim import Simulator, Delay, Settle
 
 class SpiSlave(Elaboratable):
-	def __init__(self, simulation = False, lsbFirst = False):
+	def __init__(self, width = 8, lsbFirst = False, simulation = False):
+		# Parameters
+		self.width = width
+		self.lsbFirst = lsbFirst
+		
 		# Signals in system clock domain
-		self.data_out = Signal(8)     # Data to be sent during next SPI transaction
-		self.data_in  = Signal(8)     # Data received from SPI during last transaction
+		self.data_out = Signal(width) # Data to be sent during next SPI transaction
+		self.data_in  = Signal(width) # Data received from SPI during last transaction
 		self.counter  = Signal(4)     # Counter showing the amount of bits received
 		
 		# Signals in SPI clock domain
@@ -17,9 +21,6 @@ class SpiSlave(Elaboratable):
 		
 		# Simulation flag
 		self._simulation = simulation
-		
-		# Settings
-		self.lsbFirst = lsbFirst
 	
 	def elaborate(self, platform: Platform) -> Module:
 		m = Module()
@@ -57,8 +58,8 @@ class SpiSlave(Elaboratable):
 		m.d.comb += mosi.eq(mosi_reg[1])
 		
 		# Buffers
-		tx_buffer = Signal(8)
-		rx_buffer = Signal(8)
+		tx_buffer = Signal(self.width)
+		rx_buffer = Signal(self.width)
 		
 		# Data output
 		m.d.comb += self.spi_miso.eq(tx_buffer[0])
@@ -66,18 +67,23 @@ class SpiSlave(Elaboratable):
 		# Transaction state machine
 		with m.If(~ssel_active): # We are not selected, reset state
 			m.d.sync += self.counter.eq(0)
+			if self.lsbFirst:
+				m.d.sync += tx_buffer.eq(self.data_out)
+			else:
+				for bit in range(self.width):
+					m.d.sync += tx_buffer[bit].eq(self.data_out[self.width-1-bit])
 		with m.Elif(sclk_risingedge): # Clock ticked, read data
 			m.d.sync += self.counter.eq(self.counter+1)
 			if self.lsbFirst:
-				m.d.sync += rx_buffer.eq((rx_buffer>>1) | (mosi<<7))
+				m.d.sync += rx_buffer.eq((rx_buffer>>1) | (mosi<<(self.width-1)))
 			else:
 				m.d.sync += rx_buffer.eq((rx_buffer<<1) | mosi)
+			m.d.sync += tx_buffer.eq(tx_buffer>>1)
 		
 		with m.If(ssel_risingedge): # End of transaction
-			m.d.sync += tx_buffer.eq(self.data_out)
 			m.d.sync += self.data_in.eq(rx_buffer)
-		with m.Elif(sclk_fallingedge): # Clock ticked, write data
-			m.d.sync += tx_buffer.eq(tx_buffer>>1)
+		#with m.Elif(sclk_fallingedge): # Clock ticked, write data
+		#	m.d.sync += tx_buffer.eq(tx_buffer>>1)
 		
 		# Expose internal signals during simulation
 		if self._simulation:
@@ -119,6 +125,7 @@ if __name__ == "__main__":
 		yield m.spi_sclk.eq(1) # Clock starts high
 		yield m.spi_ssel.eq(1) # Not selected
 		yield m.spi_miso.eq(0) # Input data is low
+		yield m.data_out.eq(0xFF) # Data to be transmitted
 		yield Delay(1e-6) # 1 uS delay
 		
 		for test_data in [0b11110000, 0b10101010, 0b00001111]:
